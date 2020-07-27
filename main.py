@@ -37,22 +37,11 @@ for i, (y_v, images_v) in enumerate(test_loader):
     if i==0:
         test_images = images_v
         test_data = y_v
-    # elif i==1:
-    #     break
-    # else:
-    #     test_images = torch.cat((test_images, images_v), axis=0)
-    #     test_data = torch.cat((test_data, y_v), axis=0)
+
 
 # add channel axis; torch tensor format (batch_size, channel, width, height)
 test_images = torch.unsqueeze(test_images, 1)   # torch.Size([batch_size, 1, 512, 512])
 test_data = torch.unsqueeze(test_data, 1)       # torch.Size([batch_size, 1, 512, 720/ds])
-
-print("Size of test dataset: {}".format(test_images.shape))
-print("Size of measurements: {}".format(test_data.shape))
-# test_images = np.load('test_images.npy')
-# test_data = np.load('test_data.npy')
-# test_images = torch.from_numpy(test_images)
-# test_data = torch.from_numpy(test_data)
 
 
 dir_name = "./figures/"
@@ -60,8 +49,6 @@ if not os.path.exists(dir_name):
     os.makedirs(dir_name)
     print('Create path : {}'.format(dir_name))
 
-# Display sample data
-#show_batch(test_loader, dir_name +'one_sample',0)
 
 num_display = batch_size
 
@@ -210,7 +197,7 @@ print('===========================================')
 print('FISTA-Net...')
 use_cuda = True
 fista_net_mode = 1    # 0, test mode; 1, train mode.
-fista_net = FISTANet(6, theta)
+fista_net = FISTANet(7, theta)
 
 if use_cuda:
     fista_net = fista_net.cuda()

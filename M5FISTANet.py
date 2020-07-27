@@ -2,10 +2,6 @@
 """
 Created on July 15, 2020
 
-ISTANet(shared network with 4 conv + ReLU) + regularized hyperparameters softplus(w*x + b). 
-The Intention is to make gradient step \mu and thresholding value \theta positive and monotonically decrease.
-baseline 2 stopped converge after 20 epoch. It might due to the shallow network(2 conv + 2 deconv) in each block.
-
 
 @author: XIANG
 """

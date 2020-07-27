@@ -13,7 +13,7 @@ from matplotlib import patches
 # helper function to show ample data
 def show_batch(data_loader, fig_name, idx):    
     """
-    Show one batch of EIT sample data.
+    Show one batch of sample data.
     idx, batch numvber to be shown;
     """
     for i_batch, (input_batch, target_batch) in enumerate(data_loader):
