@@ -2,6 +2,10 @@
 """
 Created on July 15, 2020
 
+ISTANet(shared network with 4 conv + ReLU) + regularized hyperparameters softplus(w*x + b). 
+The Intention is to make gradient step \mu and thresholding value \theta positive and monotonically decrease.
+baseline 2 stopped converge after 20 epoch. It might due to the shallow network(2 conv + 2 deconv) in each block.
+
 
 @author: XIANG
 """
@@ -87,10 +91,10 @@ class  BasicBlock(nn.Module):
         x_forward = self.conv4_forward(x)
 
         # soft-thresholding block
-        x = torch.mul(torch.sign(x_forward), F.relu(torch.abs(x_forward) - self.Sp(soft_thr)))
+        x_st = torch.mul(torch.sign(x_forward), F.relu(torch.abs(x_forward) - self.Sp(soft_thr)))
 
         # Hk^hat block in the paper
-        x = self.conv1_backward(x)
+        x = self.conv1_backward(x_st)
         x = F.relu(x)
         x = self.conv2_backward(x)
         x = F.relu(x)
@@ -114,7 +118,7 @@ class  BasicBlock(nn.Module):
         x_D_est = self.conv4_backward(x)
         symloss = x_D_est - x_D
 
-        return [x_pred, symloss]
+        return [x_pred, symloss, x_st]
 
 class FISTANet(nn.Module):
     def __init__(self, LayerNo, theta):
@@ -152,15 +156,17 @@ class FISTANet(nn.Module):
         xold = x0
         y = xold 
         layers_sym = []     # for computing symmetric loss
+        layers_st = []      # for computing sparsity constraints
         # xnews = [] # iteration result
         for i in range(self.LayerNo):
             theta_ = self.w_theta * i + self.b_theta
             mu_ = self.w_mu * i + self.b_mu
-            [xnew, layer_sym] = self.fcs[i](y, self.theta, sinogram, mu_, theta_)
+            [xnew, layer_sym, layer_st] = self.fcs[i](y, self.theta, sinogram, mu_, theta_)
             rho_ = (self.Sp(self.w_rho * i + self.b_rho) -  self.Sp(self.b_rho)) / self.Sp(self.w_rho * i + self.b_rho)
             y = xnew + rho_ * (xnew - xold) # two-step update
             xold = xnew
             # xnews.append(xnew) # iteration result
             layers_sym.append(layer_sym)
+            layers_st.append(layer_st)
 
-        return [xnew, layers_sym]
+        return [xnew, layers_sym, layers_st]

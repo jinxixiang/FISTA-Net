@@ -132,21 +132,25 @@ class Solver(object):
                 # predict and compute losses
                 if self.model_name == 'MoDL':
                     pred = self.model(X_fbp, b_in)
-                    loss = self.train_loss(pred, y_target) + l1_loss(pred, y_target, 0.3)
+                    loss = self.train_loss(pred, y_target) #+ l1_loss(pred, y_target, 0.3)
                 if self.model_name == 'fista_net':
-                    [pred, loss_layers_sym] = self.model(X_fbp, b_in)
+                    [pred, loss_layers_sym, encoder_st] = self.model(X_fbp, b_in)
 
                     # Compute loss, data consistency and regularizer constraints
-                    loss_discrepancy = self.train_loss(pred, y_target) + l1_loss(pred, y_target, 0.3)
+                    loss_discrepancy = self.train_loss(pred, y_target) #+ l1_loss(pred, y_target, 0.3)
                     loss_constraint = 0
                     for k, _ in enumerate(loss_layers_sym, 0):
                         loss_constraint += torch.mean(torch.pow(loss_layers_sym[k], 2))
 
+                    encoder_constraint = 0
+                    for k, _ in enumerate(encoder_st, 0):
+                        encoder_constraint += torch.mean(torch.abs(encoder_st[k]))
+
                     # loss = loss_discrepancy + gamma * loss_constraint
-                    loss = loss_discrepancy +  0.01 * loss_constraint 
+                    loss = loss_discrepancy +  0.01 * loss_constraint + 0.001 * encoder_constraint
                 if self.model_name == 'denoise_net':
                     pred = self.model(X_fbp)
-                    loss = self.train_loss(pred, y_target) + l1_loss(pred, y_target, 0.3)
+                    loss = self.train_loss(pred, y_target) #+ l1_loss(pred, y_target, 0.3)
                 
                 self.model.zero_grad()
                 self.optimizer.zero_grad()
