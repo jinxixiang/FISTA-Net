@@ -82,7 +82,7 @@ def show_image_matrix(fig_name, image_batches, titles=None, indices=None, **kwar
         for name, batch, ax in zip(titles, displayed_batches, row):
             if i == 0:
                 ax.set_title(name)
-            pcm = ax.imshow(batch[i].squeeze(), cmap=plt.cm.Greys_r, vmin=0, vmax=0.6)
+            pcm = ax.imshow(batch[i].squeeze(), cmap=plt.cm.Greys_r, vmin=0, vmax=1)
             fig.colorbar(pcm, ax=ax)
             ax.set_axis_off()
     plt.show()
