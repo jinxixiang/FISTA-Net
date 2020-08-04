@@ -2,8 +2,7 @@
 """
 Created on Thu Apr  9 11:38:30 2020
 
-One-step inversion (Lap. Reg) + U-net Denoiser.
-
+One-step inversion FBP + U-net Denoiser.
 
 @author: XIANG
 """
