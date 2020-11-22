@@ -4,6 +4,8 @@ Created on Thu Apr  9 09:55:25 2020
 
 @author: XIANG
 """
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import torch
 from skimage import transform
@@ -34,7 +36,7 @@ def show_batch(data_loader, fig_name, idx):
                     extent=(0, 180, 0, input_batch[i].shape[0]), aspect='auto')
                 ax_row[1].imshow(target_batch[i], cmap=plt.cm.Greys_r)
 
-            plt.show()
+            # plt.show()
             fig.savefig(fig_name)
 
 
@@ -68,7 +70,7 @@ def show_image_matrix(fig_name, image_batches, titles=None, indices=None, **kwar
     if titles is None:
         titles = [''] * ncols
 
-    figsize = 10
+    figsize = 20
     fig, rows = plt.subplots(
         nrows, ncols, sharex=False, sharey=False,
         figsize=(ncols * figsize, figsize * nrows))
@@ -82,9 +84,9 @@ def show_image_matrix(fig_name, image_batches, titles=None, indices=None, **kwar
         for name, batch, ax in zip(titles, displayed_batches, row):
             if i == 0:
                 ax.set_title(name)
-            pcm = ax.imshow(batch[i].squeeze(), cmap=plt.cm.Greys_r, vmin=0, vmax=1)
+            pcm = ax.imshow(batch[i].squeeze(), cmap=plt.cm.Greys_r, vmin=0, vmax=0.6)
             fig.colorbar(pcm, ax=ax)
             ax.set_axis_off()
-    plt.show()
+    # plt.show()
     fig.savefig(fig_name)
     

@@ -1,3 +1,14 @@
+# -*- coding: utf-8 -*-
+"""
+Created on July 15, 2020
+
+ISTANet(shared network with 4 conv + ReLU) + regularized hyperparameters softplus(w*x + b). 
+The Intention is to make gradient step \mu and thresholding value \theta positive and monotonically decrease.
+baseline 2 stopped converge after 20 epoch. It might due to the shallow network(2 conv + 2 deconv) in each block.
+
+
+@author: XIANG
+"""
 
 import torch 
 import torch.nn as nn
@@ -53,19 +64,15 @@ class  BasicBlock(nn.Module):
         soft_thr:       soft-thresholding value
         """
         # rk block in the paper
-        X_fbp = torch.zeros_like(x)
-        batch_size = x.shape[0]
+        image_size = x.shape[3]
         
-        for i in range(batch_size):
-            x_in = x[i].squeeze()
-            x_in = x_in.cpu().detach().numpy()
-            sino_pred = radon(x_in, theta=theta, circle=True)
-            sino = sinogram[i].squeeze()
-            sino = sino.cpu().detach().numpy()
-            x_grad = iradon(sino_pred - sino, theta=theta)
-            X_fbp[i] = torch.from_numpy(x_grad)
+        # instantiate Radon transform
+        radon = Radon(image_size, theta)
 
-        x_input = x - self.Sp(lambda_step) * X_fbp
+        # estimate step size
+        alpha = self.Sp(lambda_step)
+        y = sinogram
+        x_input = (x - alpha * radon.backward(radon.forward(x) - y))
         
         # Dk block in the paper
         x_D = self.conv_D(x_input)
@@ -116,7 +123,7 @@ class FISTANet(nn.Module):
         self.LayerNo = LayerNo
 
         onelayer = []
-        self.bb = BasicBlock()
+        self.bb = BasicBlock(features=32)
         for i in range(LayerNo):
             onelayer.append(self.bb)
 
@@ -146,7 +153,7 @@ class FISTANet(nn.Module):
         y = xold 
         layers_sym = []     # for computing symmetric loss
         layers_st = []      # for computing sparsity constraints
-        # xnews = [] # iteration result
+        xnews = [] # iteration result
         for i in range(self.LayerNo):
             theta_ = self.w_theta * i + self.b_theta
             mu_ = self.w_mu * i + self.b_mu
@@ -154,8 +161,8 @@ class FISTANet(nn.Module):
             rho_ = (self.Sp(self.w_rho * i + self.b_rho) -  self.Sp(self.b_rho)) / self.Sp(self.w_rho * i + self.b_rho)
             y = xnew + rho_ * (xnew - xold) # two-step update
             xold = xnew
-            # xnews.append(xnew) # iteration result
+            xnews.append(xnew) # iteration result
             layers_sym.append(layer_sym)
             layers_st.append(layer_st)
 
-        return [xnew, layers_sym, layers_st]
+        return [xnews, layers_sym, layers_st]

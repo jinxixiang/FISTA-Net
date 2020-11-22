@@ -57,13 +57,12 @@ class ct_dataset(Dataset):
             input_img = self.transform(input_img)
             target_img = self.transform(target_img)
 
-
         return (input_img, target_img)
 
 
 def get_loader(mode='train', load_mode=0, ds_factor=6, saved_path=None, test_patient='L311',transform=None,batch_size=32):
     dataset_ = ct_dataset(mode, load_mode, ds_factor, saved_path, test_patient, transform)
-    data_loader = DataLoader(dataset=dataset_, batch_size=batch_size, shuffle=True, num_workers=6)
+    data_loader = DataLoader(dataset=dataset_, batch_size=batch_size, shuffle=True, num_workers=1)
     return data_loader
 
 

@@ -11,14 +11,14 @@ from helpers import show_image_matrix, show_batch
 from solver import Solver
 from metric import compute_measure
 
-from M3DenoiseNet import DenoiseNet
-from M4MoDL import MoDL
+from M3FBPConv import FBPConv
+from M4ISTANet import ISTANet
 from M5FISTANet import FISTANet
 
 # =============================================================================
 # Load dataset
 # load input and target dataset; test_loader, train_loader, val_loader
-data_dir = './npy_img/'
+data_dir = '/media/ps/D/LDCT/npy_img'
 ds_factor = 12
 batch_size = 1
 train_loader, val_loader, test_loader = DataSplit(test_patient='L096', batch_size=batch_size, validation_split=0.2, 
@@ -47,16 +47,23 @@ for i, (y_v, images_v) in enumerate(test_loader):
 test_images = torch.unsqueeze(test_images, 1)   # torch.Size([batch_size, 1, 512, 512])
 test_data = torch.unsqueeze(test_data, 1)       # torch.Size([batch_size, 1, 512, 720/ds])
 
+print("Size of test dataset: {}".format(test_images.shape))
+print("Size of measurements: {}".format(test_data.shape))
 
-dir_name = "./figures/"
+# appoint test dataset
+# test_images = np.load('test_images.npy') 
+# test_data = np.load('test_data.npy') 
+# test_images = torch.from_numpy(test_images)
+# test_data = torch.from_numpy(test_data)
+
+
+dir_name = "./figures"
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
     print('Create path : {}'.format(dir_name))
 
-# Display sample data
-#show_batch(test_loader, dir_name +'one_sample',0)
 
-num_display = batch_size
+num_display = test_images.shape[0]
 
 # =============================================================================
 # Model 1
@@ -68,7 +75,7 @@ theta = np.linspace(0.0, 180.0, rotView, endpoint=False)
 
 X_fbp = torch.zeros_like(test_images)
 
-for i in range(batch_size):
+for i in range(num_display):
     sino = test_data[i].squeeze()
     X0 = iradon(sino, theta=theta)
     X_fbp[i] = torch.from_numpy(X0)
@@ -95,104 +102,104 @@ print('PSNR: {:.5f}\t SSIM: {:.5f} \t RMSE: {:.5f}'.format(p_reg, s_reg, m_reg))
 # Use these parameters to steer the training
 print('===========================================')
 print('Lap. Reg. + U-net...')
-use_cuda = True
-denoise_net_mode = 0    # 0, test mode; 1, train mode.
-denoise_net = DenoiseNet(in_channels = 1, out_channels = 1, features = 16)
 
-if use_cuda:
-    denoise_net = denoise_net.cuda()
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+
+FBPConv_mode = 0    # 0, test mode; 1, train mode.
+FBPConv = FBPConv(in_channels = 1, out_channels = 1, features = 16)
+FBPConv = FBPConv.to(device)
  
 
-print('Total number of parameters denoise_net: ',
-      sum(p.numel() for p in denoise_net.parameters()))
+print('Total number of parameters FBPConv: ',
+      sum(p.numel() for p in FBPConv.parameters()))
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_name', type=str, default='denoise_net')
-parser.add_argument('--num_epochs', type=int, default=50)
+parser.add_argument('--model_name', type=str, default='FBPConv')
+parser.add_argument('--num_epochs', type=int, default=1)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--data_dir', type=str, default=data_dir)
-parser.add_argument('--save_path', type=str, default='./models/denoisenet/')
-parser.add_argument('--start_epoch', type=int, default=50)
+parser.add_argument('--save_path', type=str, default='./models/FBPConv/')
+parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--multi_gpu', type=bool, default=False)
-parser.add_argument('--use_cuda', type=bool, default=use_cuda)
+parser.add_argument('--device', default=device)
 parser.add_argument('--log_interval', type=int, default=200)
-parser.add_argument('--test_epoch', type=int, default=100)
+parser.add_argument('--test_epoch', type=int, default=1)
 parser.add_argument('--theta', type=float, default=theta)
 args = parser.parse_args()
 
 if args.start_epoch > 0:
     f_trained = pjoin(args.save_path, 'epoch_{}.ckpt'.format(args.start_epoch))
-    denoise_net.load_state_dict(torch.load(f_trained))
+    FBPConv.load_state_dict(torch.load(f_trained))
         
-solver = Solver(denoise_net, train_loader, args, test_data, test_images)
+solver = Solver(FBPConv, train_loader, args, test_data, test_images)
 
-if denoise_net_mode==1:
+if FBPConv_mode==1:
     solver.train()
-    denoise_net_test = solver.test()
+    FBPConv_test = solver.test()
 else:
-    denoise_net_test = solver.test()
+    FBPConv_test = solver.test()
 
-denoise_net_test = denoise_net_test.cpu().double()
-fig_name = dir_name + '/denoisenet_' + str(args.test_epoch) + 'epoch.png'
-results = [test_images, X_fbp, denoise_net_test]
-titles = ['truth', 'FBP', 'denoise net']
+FBPConv_test = FBPConv_test.cpu().double()
+fig_name = dir_name + '/FBPConv_' + str(args.test_epoch) + 'epoch.png'
+results = [test_images, X_fbp, FBPConv_test]
+titles = ['truth', 'FBP', 'FBPConv']
 show_image_matrix(fig_name, results, titles=titles, indices=slice(0, num_display))
 
 # Evalute reconstructed images with PSNR, SSIM, RMSE.
-p_reg, s_reg, m_reg = compute_measure(test_images, denoise_net_test, 1)
+p_reg, s_reg, m_reg = compute_measure(test_images, FBPConv_test, 1)
 print('PSNR: {:.5f}\t SSIM: {:.5f} \t RMSE: {:.5f}'.format(p_reg, s_reg, m_reg))
 
 # =============================================================================
 # Model 4
-# Model based deep learning method. (Digital Object Identifier 10.1109/TMI.2018.2865356)
+# ISTANet CVPR 2018
 
 print('===========================================')
-print('Model based deep learning...')
-MoDL_mode = 0
+print('ISTANet CVPR 2018...')
 
-niter = 5
-MoDL = MoDL(niter=niter, theta=theta)
-if use_cuda:
-    MoDL = MoDL.cuda()
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
-print('Total number of parameters MoDL net:',
-      sum(p.numel() for p in MoDL.parameters()))
+ISTANet_mode = 0
+LayerNo = 5
+ISTANet = ISTANet(LayerNo=LayerNo, theta=theta)
+ISTANet = ISTANet.to(device)
 
-    
+print('Total number of parameters ISTANet:',
+      sum(p.numel() for p in ISTANet.parameters()))
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_name', type=str, default='MoDL')
-parser.add_argument('--num_epochs', type=int, default=60)
+parser.add_argument('--model_name', type=str, default='ISTANet')
+parser.add_argument('--num_epochs', type=int, default=1)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--data_dir', type=str, default=data_dir)
-parser.add_argument('--save_path', type=str, default='./models/MoDL/')
-parser.add_argument('--start_epoch', type=int, default=40)
+parser.add_argument('--save_path', type=str, default='./models/ISTANet/')
+parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--multi_gpu', type=bool, default=False)
-parser.add_argument('--use_cuda', type=bool, default=use_cuda)
+parser.add_argument('--device', default=device)
 parser.add_argument('--log_interval', type=int, default=200)
-parser.add_argument('--test_epoch', type=int, default=100)
+parser.add_argument('--test_epoch', type=int, default=1)
 parser.add_argument('--theta', type=float, default=theta)
 args = parser.parse_args()
 
 if args.start_epoch > 0:
     f_trained = pjoin(args.save_path, 'epoch_{}.ckpt'.format(args.start_epoch))
-    MoDL.load_state_dict(torch.load(f_trained))
+    ISTANet.load_state_dict(torch.load(f_trained))
 
-solver = Solver(MoDL, train_loader, args, test_data, test_images)
+solver = Solver(ISTANet, train_loader, args, test_data, test_images)
 
-if MoDL_mode==1:
+if ISTANet_mode==1:
     solver.train()
-    MoDL_test = solver.test()
+    ISTANet_test = solver.test()
 else:
-    MoDL_test = solver.test()
+    ISTANet_test = solver.test()
 
-MoDL_test = MoDL_test.cpu().double()
-fig_name = dir_name + '/MoDL_' + str(args.test_epoch)  + 'epoch.png'
-results = [test_images, X_fbp, denoise_net_test, MoDL_test]
-titles = ['truth', 'LBP',  'denoise net', 'MoDL']
+ISTANet_test = ISTANet_test.cpu().double()
+fig_name = dir_name + '/ISTANet_' + str(args.test_epoch)  + 'epoch.png'
+results = [test_images, X_fbp, FBPConv_test, ISTANet_test]
+titles = ['truth', 'LBP',  'denoise net', 'ISTANet']
 show_image_matrix(fig_name, results, titles=titles, indices=slice(0, num_display))
 
 # Evalute reconstructed images with PSNR, SSIM, RMSE.
-p_reg, s_reg, m_reg = compute_measure(test_images, MoDL_test, 1)
+p_reg, s_reg, m_reg = compute_measure(test_images, ISTANet_test, 1)
 print('PSNR: {:.5f}\t SSIM: {:.5f} \t RMSE: {:.5f}'.format(p_reg, s_reg, m_reg))
 
 # =============================================================================
@@ -201,49 +208,48 @@ print('PSNR: {:.5f}\t SSIM: {:.5f} \t RMSE: {:.5f}'.format(p_reg, s_reg, m_reg))
 
 print('===========================================')
 print('FISTA-Net...')
-use_cuda = True
-fista_net_mode = 1    # 0, test mode; 1, train mode.
-fista_net = FISTANet(6, theta)
+device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
-if use_cuda:
-    fista_net = fista_net.cuda()
+FISTANet_mode = 1    # 0, test mode; 1, train mode.
+FISTANet = FISTANet(6, theta)
+FISTANet = FISTANet.to(device)
 
 print('Total number of parameters fista net:',
-      sum(p.numel() for p in fista_net.parameters()))
+      sum(p.numel() for p in FISTANet.parameters()))
 
-# define arguments of fista_net
+# define arguments of FISTANet
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_name', type=str, default='fista_net')
-parser.add_argument('--num_epochs', type=int, default=50)
+parser.add_argument('--model_name', type=str, default='FISTANet')
+parser.add_argument('--num_epochs', type=int, default=10)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--data_dir', type=str, default=data_dir)
-parser.add_argument('--save_path', type=str, default='./models/fista_net/')
-parser.add_argument('--start_epoch', type=int, default=50)
+parser.add_argument('--save_path', type=str, default='./models/FISTANet/')
+parser.add_argument('--start_epoch', type=int, default=1)
 parser.add_argument('--multi_gpu', type=bool, default=False)
-parser.add_argument('--use_cuda', type=bool, default=use_cuda)
+parser.add_argument('--device', default=device)
 parser.add_argument('--log_interval', type=int, default=200)
-parser.add_argument('--test_epoch', type=int, default=100)
+parser.add_argument('--test_epoch', type=int, default=10)
 parser.add_argument('--theta', type=float, default=theta)
 args = parser.parse_args()
 
 if args.start_epoch > 0:
     f_trained = pjoin(args.save_path, 'epoch_{}.ckpt'.format(args.start_epoch))
-    fista_net.load_state_dict(torch.load(f_trained))
+    FISTANet.load_state_dict(torch.load(f_trained))
 
-solver = Solver(fista_net, train_loader, args, test_data, test_images)
+solver = Solver(FISTANet, train_loader, args, test_data, test_images)
 
-if fista_net_mode == 1:
+if FISTANet_mode == 1:
     solver.train()
-    fista_net_test = solver.test()
+    FISTANet_test = solver.test()
 else:
-    fista_net_test = solver.test()
+    FISTANet_test = solver.test()
 
-fista_net_test = fista_net_test.cpu().double()
-fig_name = dir_name + '/fista_net_' + str(args.test_epoch) + 'epoch.png'
-results = [test_images, X_fbp, denoise_net_test, fista_net_test]
-titles = ['truth', 'FBP','denoise_net', 'fista_net']
+FISTANet_test = FISTANet_test.cpu().double()
+fig_name = dir_name + '/FISTANet_' + str(args.test_epoch) + 'epoch.png'
+results = [test_images, X_fbp, FBPConv_test, ISTANet_test, FISTANet_test]
+titles = ['truth', 'FBP', 'FBPConv', 'ISTANet', 'FISTANet']
 show_image_matrix(fig_name, results, titles=titles, indices=slice(0, num_display))
 
 # Evalute reconstructed images with PSNR, SSIM, RMSE.
-p_reg, s_reg, m_reg = compute_measure(test_images, fista_net_test, 1)
+p_reg, s_reg, m_reg = compute_measure(test_images, FISTANet_test, 1)
 print('PSNR: {:.5f}\t SSIM: {:.5f} \t RMSE: {:.5f}'.format(p_reg, s_reg, m_reg))

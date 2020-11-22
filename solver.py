@@ -42,7 +42,7 @@ def tv_loss(img, tv_weight):
 
 class Solver(object):
     def __init__(self, model, data_loader, args, test_data, test_images):
-        assert args.model_name in ['full_net','denoise_net', 'MoDL', 'fista_net']
+        assert args.model_name in ['FBPConv', 'ISTANet', 'FISTANet']
 
         self.model_name = args.model_name
         self.model = model
@@ -52,30 +52,27 @@ class Solver(object):
         self.start_epoch = args.start_epoch
         self.lr = args.lr
 
-        if self.model_name == 'MoDL':
-            # set different learning rate for cnn and numerical block
-            self.optimizer = optim.Adam([
-                {'params': self.model.dw.parameters()}, 
-                {'params': self.model.dc.parameters(), 'lr': 0.0001}
-                ], lr=self.lr, weight_decay=0.0001)
-        elif self.model_name == 'fista_net':
+
+        if self.model_name == 'FISTANet':
             # set different lr for regularization weights and network weights
             self.optimizer = optim.Adam([
-            {'params': self.model.fcs.parameters()}, 
-            {'params': self.model.w_theta, 'lr': 0.0001},
-            {'params': self.model.b_theta, 'lr': 0.0001},
-            {'params': self.model.w_mu, 'lr': 0.0001},
-            {'params': self.model.b_mu, 'lr': 0.0001},
-            {'params': self.model.w_rho, 'lr': 0.0001},
-            {'params': self.model.b_rho, 'lr': 0.0001}], 
-            lr=self.lr, weight_decay=0.0001)
+            {'params': self.model.module.fcs.parameters()}, 
+            {'params': self.model.module.w_theta, 'lr': 1e-4},
+            {'params': self.model.module.b_theta, 'lr': 1e-1},
+            {'params': self.model.module.w_mu, 'lr': 1e-4},
+            {'params': self.model.module.b_mu, 'lr': 1e-4},
+            {'params': self.model.module.w_rho, 'lr': 1e-4},
+            {'params': self.model.module.b_rho, 'lr': 1e-4}], 
+            lr=self.lr, weight_decay=0.001)
         else:
-            self.optimizer = optim.Adam(self.model.parameters(), self.lr, weight_decay=0.0001)
+            self.optimizer = optim.Adam(self.model.parameters(), self.lr, weight_decay=0.001)
+        
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.1) # step-wise
         
         self.theta = args.theta
         self.save_path = args.save_path
         self.multi_gpu = args.multi_gpu
-        self.use_cuda = args.use_cuda
+        self.device = args.device
         self.log_interval = args.log_interval
         self.test_epoch = args.test_epoch
         self.test_data = test_data
@@ -90,15 +87,7 @@ class Solver(object):
     
     def load_model(self, iter_):
         f = pjoin(self.save_path, 'epoch_{}.ckpt'.format(iter_))
-        if self.multi_gpu:
-            state_d = OrderedDict()
-            for k, v in torch.load(f):
-                n = k[7:]
-                state_d[n] = v
-            self.model.load_state_dict(state_d)
-        else:
-            self.model.load_state_dict(torch.load(f))
-            
+        self.model.load_state_dict(torch.load(f))
     
     def train(self):
         train_losses = []
@@ -123,21 +112,28 @@ class Solver(object):
                     X0 = iradon(sino, theta=self.theta)
                     X_fbp[i] = torch.from_numpy(X0)
 
-                # move to gpu
-                if self.use_cuda:
-                    X_fbp = X_fbp.cuda().float()         # initial guess x0
-                    #b_in = b_in.cuda().float()           # measured sinogram
-                    y_target = y_target.cuda().float()   # ground truth image
+                # initial guess x0
+                X_fbp = torch.tensor(X_fbp, dtype=torch.float32, device=self.device)         
+                # ground truth image
+                y_target = torch.tensor(y_target, dtype=torch.float32, device=self.device)   
                 
                 # predict and compute losses
-                if self.model_name == 'MoDL':
-                    pred = self.model(X_fbp, b_in)
-                    loss = self.train_loss(pred, y_target) #+ l1_loss(pred, y_target, 0.3)
-                if self.model_name == 'fista_net':
+                if self.model_name == 'ISTANet':
+                    [pred, loss_sym] = self.model(X_fbp, b_in)
+
+                    # Compute loss, data consistency and regularizer constraints
+                    loss_discrepancy = self.train_loss(pred, y_target) + l1_loss(pred, y_target, 0.1)
+                    loss_constraint = 0
+                    for k, _ in enumerate(loss_sym, 0):
+                        loss_constraint += torch.mean(torch.pow(loss_sym[k], 2))
+
+                    loss = loss_discrepancy + 0.01 * loss_constraint
+
+                if self.model_name == 'FISTANet':
                     [pred, loss_layers_sym, encoder_st] = self.model(X_fbp, b_in)
 
                     # Compute loss, data consistency and regularizer constraints
-                    loss_discrepancy = self.train_loss(pred, y_target) #+ l1_loss(pred, y_target, 0.3)
+                    loss_discrepancy = self.train_loss(pred, y_target) + l1_loss(pred, y_target, 0.1)
                     loss_constraint = 0
                     for k, _ in enumerate(loss_layers_sym, 0):
                         loss_constraint += torch.mean(torch.pow(loss_layers_sym[k], 2))
@@ -148,9 +144,9 @@ class Solver(object):
 
                     # loss = loss_discrepancy + gamma * loss_constraint
                     loss = loss_discrepancy +  0.01 * loss_constraint + 0.001 * encoder_constraint
-                if self.model_name == 'denoise_net':
+                if self.model_name == 'FBPConv':
                     pred = self.model(X_fbp)
-                    loss = self.train_loss(pred, y_target) #+ l1_loss(pred, y_target, 0.3)
+                    loss = self.train_loss(pred, y_target) + l1_loss(pred, y_target, 0.1)
                 
                 self.model.zero_grad()
                 self.optimizer.zero_grad()
@@ -158,9 +154,9 @@ class Solver(object):
                 # backpropagate the gradients
                 loss.backward()
                 self.optimizer.step()
+                # self.scheduler.step()
                 train_losses.append(loss.item())
                 
-
                 # print processes 
                 if batch_idx % self.log_interval == 0:
                     writer.add_scalar('training loss', loss.data, epoch * len(self.data_loader) + batch_idx)
@@ -172,20 +168,6 @@ class Solver(object):
                                     loss.data,
                                     time.time() - start_time))  
 
-                    # print weight values of model
-                    if self.model_name == 'fista_net':
-
-                        print("Threshold value w: {}".format(self.model.w_theta))
-                        print("Threshold value b: {}".format(self.model.b_theta))
-                        print("Gradient step w: {}".format(self.model.w_mu))
-                        print("Gradient step b: {}".format(self.model.b_mu))
-                        print("Two step update w: {}".format(self.model.w_rho))
-                        print("Two step update b: {}".format(self.model.b_rho))
-
-                    if self.model_name == 'MoDL':
-                        print("Regularization parameter: {}".format(self.model.dc.lam))
-                      
-  
             # save model
             if epoch % 1 == 0:
 
@@ -204,16 +186,19 @@ class Solver(object):
                 sino = self.test_data[i].squeeze()
                 X0 = iradon(sino, theta=self.theta)
                 X_fbp[i] = torch.from_numpy(X0)
+            
+            X_fbp = torch.tensor(X_fbp, dtype=torch.float32, device=self.device)
+            self.test_data = torch.tensor(self.test_data, dtype=torch.float32, device=self.device)
 
-            if self.model_name == "denoise_net":
-                test_res = self.model(X_fbp.cuda().float())
-            if self.model_name == "fista_net":
-                [test_res, _] = self.model(X_fbp.cuda().float(), self.test_data.cuda().float())
-                # torch.save(test_res, 'iteration_result.pt') # iteration result
-                # test_res = test_res[5] # iteration result
+            if self.model_name == "FBPConv":
+                test_res = self.model(X_fbp)
 
-            if self.model_name == "MoDL":
-                test_res = self.model(X_fbp.cuda().float(), self.test_data.cuda().float())
+            if self.model_name == "FISTANet":
+                [test_res, _, _] = self.model(X_fbp, self.test_data)
+
+            if self.model_name == "ISTANet":
+                [test_res, _] = self.model(X_fbp, self.test_data)
+
         
         return test_res
         
