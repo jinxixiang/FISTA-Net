@@ -26,7 +26,7 @@ def initialize_weights(self):
             nn.init.constant_(m.bias, 0)
 
 class FBPConv(nn.Module):
-    """docstring for DenoiseNet"""
+    """docstring for FBPConv"""
     def __init__(self, in_channels = 1, out_channels = 1, features = 16):
         super(FBPConv, self).__init__()
         self.unet = UNet(in_channels, out_channels, features)

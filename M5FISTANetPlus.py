@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on June 17, 2020
+Created on Nov. 3, 2020
 
-ISTANet(shared network with 4 conv + ReLU) + regularized hyperparameters softplus(w*x + b). 
-The Intention is to make gradient step \mu and thresholding value \theta positive and monotonically decrease.
-baseline 2 stopped converge after 20 epoch. It might due to the shallow network(2 conv + 2 deconv) in each block.
-
+enhanced version of FISTA-Net
+(1) with learned gradient matrix
+(2) 
 
 @author: XIANG
 """
@@ -55,7 +54,7 @@ class  BasicBlock(nn.Module):
         self.conv_G = nn.Conv2d(features, 1, (3,3), stride=1, padding=1)
 
 
-    def forward(self, x, PhiTPhi, PhiTb, LTL, mask, lambda_step, soft_thr):
+    def forward(self, x, PhiTPhi, PhiTb, mask, lambda_step, soft_thr):
         
         # convert data format from (batch_size, channel, pnum, pnum) to (circle_num, batch_size)
         pnum = x.size()[2]
@@ -65,9 +64,7 @@ class  BasicBlock(nn.Module):
         x = mask.mm(x)  
         
         # rk block in the paper
-        #x = x - self.Sp(lambda_step)  * PhiTPhi.mm(x) + self.Sp(lambda_step) * PhiTb
-        # Quadratic TV update
-        x = x - self.Sp(lambda_step) * torch.inverse(PhiTPhi + 0.001 * LTL).mm(PhiTPhi.mm(x) - PhiTb + 0.001 * LTL.mm(x))
+        x = x - self.Sp(lambda_step)  * PhiTPhi.mm(x) + self.Sp(lambda_step) * PhiTb
 
         # convert (circle_num, batch_size) to (batch_size, channel, pnum, pnum)
         x = torch.mm(mask.t(), x)
@@ -117,16 +114,16 @@ class  BasicBlock(nn.Module):
 
         return [x_pred, symloss, x_st]
 
-class FISTANet(nn.Module):
-    def __init__(self, LayerNo, Phi, L, mask):
-        super(FISTANet, self).__init__()
+class FISTANetPlus(nn.Module):
+    def __init__(self, LayerNo, Phi, Wt, mask):
+        super(FISTANetPlus, self).__init__()
         self.LayerNo = LayerNo
         self.Phi = Phi
-        self.L = L
+        self.Wt = Wt
         self.mask =mask
         onelayer = []
 
-        self.bb = BasicBlock(features=32)
+        self.bb = BasicBlock()
         for i in range(LayerNo):
             onelayer.append(self.bb)
 
@@ -157,25 +154,23 @@ class FISTANet(nn.Module):
         b = torch.squeeze(b, 2)
         b = b.t()
 
-        PhiTPhi = self.Phi.t().mm(self.Phi)
-        PhiTb = self.Phi.t().mm(b)
-        LTL = self.L.t().mm(self.L)
+        PhiTPhi = self.Wt.t().mm(self.Phi)
+        PhiTb = self.Wt.t().mm(b)
+
         # initialize the result
         xold = x0
         y = xold 
         layers_sym = []     # for computing symmetric loss
         layers_st = []      # for computing sparsity constraint
-        xnews = []       # iteration result
-        xnews.append(xold)
-
+        # xnews = []       # iteration result
         for i in range(self.LayerNo):
             theta_ = self.w_theta * i + self.b_theta
             mu_ = self.w_mu * i + self.b_mu
-            [xnew, layer_sym, layer_st] = self.fcs[i](y, PhiTPhi, PhiTb, LTL, self.mask, mu_, theta_)
+            [xnew, layer_sym, layer_st] = self.fcs[i](y, PhiTPhi, PhiTb, self.mask, mu_, theta_)
             rho_ = (self.Sp(self.w_rho * i + self.b_rho) -  self.Sp(self.b_rho)) / self.Sp(self.w_rho * i + self.b_rho)
             y = xnew + rho_ * (xnew - xold) # two-step update
             xold = xnew
-            xnews.append(xnew)   # iteration result
+            # xnews.append(xnew)   # iteration result
             layers_st.append(layer_st)
             layers_sym.append(layer_sym)
 

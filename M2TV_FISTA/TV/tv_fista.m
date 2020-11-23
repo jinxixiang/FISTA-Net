@@ -1,4 +1,4 @@
-function [X_out,fun_all]=tv_fista(sinogram,theta, img_size, lambda,l,u,pars)
+function [X_out,fun_all]=tv_fista(J,Vs,mask,lambda,l,u,pars)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %This function implements FISTA for solving the linear inverse problem with 
 % the total variation regularizer and either reflexive, periodic or zero boundary
@@ -99,7 +99,8 @@ if (nargout==2)
 end
 
 %The Lipschitz constant of the gradient of ||A(X)-Bobs||^2
-Lemt = 2*1e4;
+e = eig(J'*J);
+Lemt = 2*max(e);
 
 % fixing parameters for the denoising procedure 
 clear parsin
@@ -109,8 +110,9 @@ parsin.print=0;
 parsin.tv=tv;
 
 % initialization
-X_iter = iradon(sinogram,theta);
-X_iter = imresize(X_iter, img_size);
+[w, h] = size(J);
+emt_init = reshape(mask' * zeros(h, 1), 64, 64);
+X_iter = emt_init;
 Y = X_iter;
 t_new=1;
 
@@ -123,10 +125,7 @@ for i=1:MAXITER
     X_old=X_iter;
     t_old=t_new;
     % gradient step    
-    sino_pred = radon(Y, theta,739);
-    Y_grad = iradon(sino_pred - sinogram, theta);
-    Y_grad = imresize(Y_grad, img_size);
-    Y = Y - 2/Lemt * Y_grad;
+    Y = Y - 2/Lemt*reshape(mask'*J'*(J*mask*Y(:)-Vs), 64, 64);
     
     %invoking the denoising procedure 
     if (i==1)
@@ -137,7 +136,7 @@ for i=1:MAXITER
     % Compute the total variation and the function value and store it in
     % the function values vector fun_all if exists.
     t=tlv(Z_iter,tv);
-    fun_val=0.1*norm(sino_pred - sinogram,'fro')^2+2*lambda*t;
+    fun_val=norm(J*mask*Z_iter(:)-Vs,'fro')^2+2*lambda*t;
     
     if(mon==0)
         X_iter=Z_iter;
@@ -168,5 +167,4 @@ for i=1:MAXITER
         imagesc(X_iter);colorbar;
     end
 end
-close
 X_out=X_iter;

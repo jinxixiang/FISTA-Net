@@ -15,7 +15,6 @@ from torch.nn import init
 import torch.nn.functional as F
 import numpy as np 
 import os
-from skimage.transform import radon, iradon
 
 
 def initialize_weights(self):
@@ -40,6 +39,7 @@ class BasicBlock(torch.nn.Module):
         self.lambda_step = nn.Parameter(torch.Tensor([0.5]))
         self.soft_thr = nn.Parameter(torch.Tensor([0.01]))
 
+
         self.conv_D = nn.Parameter(init.xavier_normal_(torch.Tensor(32, 1, 3, 3)))
 
         self.conv1_forward = nn.Parameter(init.xavier_normal_(torch.Tensor(32, 32, 3, 3)))
@@ -49,27 +49,27 @@ class BasicBlock(torch.nn.Module):
 
         self.conv_G = nn.Parameter(init.xavier_normal_(torch.Tensor(1, 32, 3, 3)))
 
-    def forward(self, x, theta, sinogram):
-        """
-        x:              image from last stage, (batch_size, channel, height, width)
-        theta:          angle vector for radon/iradon transform
-        sinogram:       measured signogram of the target image
-        lambda_step:    gradient descent step
-        soft_thr:       soft-thresholding value
-        """
+    def forward(self, x, PhiTPhi, PhiTb, mask):
+        
+        # print("lambda_step: ", self.lambda_step)
+        # print("soft_thr: ", self.soft_thr)
 
+        # convert data format from (batch_size, channel, pnum, pnum) to (circle_num, batch_size)
+        pnum = x.size()[2]
+        x = x.view(x.size()[0], x.size()[1], pnum*pnum, -1)   # (batch_size, channel, pnum*pnum, 1)
+        x = torch.squeeze(x, 1)
+        x = torch.squeeze(x, 2).t()             
+        x = mask.mm(x)  
+        
         # rk block in the paper
-        image_size = x.shape[3]
-        
-        # instantiate Radon transform
-        radon = Radon(image_size, theta)
+        x = x - self.lambda_step  * PhiTPhi.mm(x) + self.lambda_step * PhiTb
 
-        # estimate step size
-        alpha = self.lambda_step
-        y = sinogram
-        x_input = (x - alpha * radon.backward(radon.forward(x) - y))
+        # convert (circle_num, batch_size) to (batch_size, channel, pnum, pnum)
+        x = torch.mm(mask.t(), x)
+        x = x.view(pnum, pnum, -1)
+        x = x.unsqueeze(0)
+        x_input = x.permute(3, 0, 1, 2)
 
-        
         x_D = F.conv2d(x_input, self.conv_D, padding=1)
 
         x = F.conv2d(x_D, self.conv1_forward, padding=1)
@@ -96,28 +96,37 @@ class BasicBlock(torch.nn.Module):
 
 # Define ISTA-Net
 class ISTANet(torch.nn.Module):
-    def __init__(self, LayerNo, theta):
+    def __init__(self, LayerNo, Phi, mask):
         super(ISTANet, self).__init__()
         onelayer = []
         self.LayerNo = LayerNo
-        self.theta = theta
+        self.Phi = Phi
+        self.mask = mask
 
         for i in range(LayerNo):
             onelayer.append(BasicBlock())
 
         self.fcs = nn.ModuleList(onelayer)
 
-    def forward(self, X0, sinogram):
+    def forward(self, Qinit, b):
         
-        x = X0
-        layers_sym = []   # for computing symmetric loss
-        # xnews = [] # iteration result
+        # convert data format from (batch_size, channel, vector_row, vector_col) to (vector_row, batch_size)
+        b = torch.squeeze(b, 1)
+        b = torch.squeeze(b, 2)
+        b = b.t()
 
+        PhiTPhi = self.Phi.t().mm(self.Phi)
+        PhiTb = self.Phi.t().mm(b)
+        x = Qinit
+        layers_sym = []   # for computing symmetric loss
+        xnews = [] # iteration result
+        xnews.append(x)
+        
         for i in range(self.LayerNo):
             # print("iteration #{}:".format(i))
-            [x, layer_sym] = self.fcs[i](x, self.theta, sinogram)
+            [x, layer_sym] = self.fcs[i](x, PhiTPhi, PhiTb, self.mask)
             layers_sym.append(layer_sym)
-            # xnews.append(x) # iteration result
+            xnews.append(x)
 
         x_final = x
 
