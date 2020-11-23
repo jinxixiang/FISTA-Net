@@ -38,8 +38,6 @@ class  BasicBlock(nn.Module):
 
     def __init__(self, features=32):
         super(BasicBlock, self).__init__()
-        #self.lambda_step = nn.Parameter(torch.Tensor([0.2]))
-        #self.soft_thr = nn.Parameter(torch.Tensor([0.05]))
         self.Sp = nn.Softplus()
 
         self.conv_D = nn.Conv2d(1, features, (3,3), stride=1, padding=1)
@@ -64,9 +62,8 @@ class  BasicBlock(nn.Module):
         x = torch.squeeze(x, 2).t()             
         x = mask.mm(x)  
         
-        # rk block in the paper
+        # gradient descent update
         #x = x - self.Sp(lambda_step)  * PhiTPhi.mm(x) + self.Sp(lambda_step) * PhiTb
-        # Quadratic TV update
         x = x - self.Sp(lambda_step) * torch.inverse(PhiTPhi + 0.001 * LTL).mm(PhiTPhi.mm(x) - PhiTb + 0.001 * LTL.mm(x))
 
         # convert (circle_num, batch_size) to (batch_size, channel, pnum, pnum)
@@ -75,10 +72,8 @@ class  BasicBlock(nn.Module):
         x = x.unsqueeze(0)
         x_input = x.permute(3, 0, 1, 2)
         
-        # Dk block in the paper
         x_D = self.conv_D(x_input)
 
-        # Hk block in the paper
         x = self.conv1_forward(x_D)
         x = F.relu(x)
         x = self.conv2_forward(x)
@@ -90,7 +85,6 @@ class  BasicBlock(nn.Module):
         # soft-thresholding block
         x_st = torch.mul(torch.sign(x_forward), F.relu(torch.abs(x_forward) - self.Sp(soft_thr)))
 
-        # Hk^hat block in the paper
         x = self.conv1_backward(x)
         x = F.relu(x)
         x = self.conv2_backward(x)
@@ -99,7 +93,6 @@ class  BasicBlock(nn.Module):
         x = F.relu(x)
         x_backward = self.conv4_backward(x)
 
-        # Gk block in the paper
         x_G = self.conv_G(x_backward)
 
         # prediction output (skip connection); non-negative output
