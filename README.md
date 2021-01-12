@@ -1,4 +1,4 @@
-# Some revisions are being made in accord with the reviews of our paper. We will update the code soon. Thanks! (Jan. 12th, 2020)
+## Some revisions are being made in accord with the reviews of our paper. We will update the code soon. Thanks! (Jan. 12th, 2020)
 
 # FISTA-Net
 A model-based deep learning network for inverse problem in imaging
