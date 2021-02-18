@@ -84,7 +84,7 @@ class  BasicBlock(nn.Module):
         # soft-thresholding block
         x_st = torch.mul(torch.sign(x_forward), F.relu(torch.abs(x_forward) - self.Sp(soft_thr)))
 
-        x = self.conv1_backward(x)
+        x = self.conv1_backward(x_st)
         x = F.relu(x)
         x = self.conv2_backward(x)
         x = F.relu(x)
