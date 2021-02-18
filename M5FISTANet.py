@@ -4,8 +4,6 @@ Created on June 17, 2020
 
 ISTANet(shared network with 4 conv + ReLU) + regularized hyperparameters softplus(w*x + b). 
 The Intention is to make gradient step \mu and thresholding value \theta positive and monotonically decrease.
-baseline 2 stopped converge after 20 epoch. It might due to the shallow network(2 conv + 2 deconv) in each block.
-
 
 @author: XIANG
 """
@@ -85,7 +83,7 @@ class  BasicBlock(nn.Module):
         # soft-thresholding block
         x_st = torch.mul(torch.sign(x_forward), F.relu(torch.abs(x_forward) - self.Sp(soft_thr)))
 
-        x = self.conv1_backward(x)
+        x = self.conv1_backward(x_st)
         x = F.relu(x)
         x = self.conv2_backward(x)
         x = F.relu(x)
