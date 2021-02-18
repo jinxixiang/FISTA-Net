@@ -1,7 +1,7 @@
 
 # FISTA-Net
 A model-based deep learning network for inverse problem in imaging
-<img src="DeepLearnings.png" width="700px"/>
+<img src="DeepLearnings.png" width="500px"/>
 
 General Framework
 ----------
