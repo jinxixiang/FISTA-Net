@@ -16,4 +16,4 @@ General Framework
 
 
 **Note**
-These are example codes for the EMT experiment. As for sparse-view CT, additional libraries like the [radon transform operator](https://github.com/matteo-ronchetti/torch-radon) should be included. We will update this part after the full review of the paper if requested. 
+These are example codes for the EMT experiment. As for sparse-view CT, additional libraries like the [radon transform operator](https://github.com/matteo-ronchetti/torch-radon) should be included.
