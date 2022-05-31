@@ -60,9 +60,11 @@ class  BasicBlock(nn.Module):
         x = torch.squeeze(x, 2).t()             
         x = mask.mm(x)  
         
-        # gradient descent update
+        # naive gradient descent update
         #x = x - self.Sp(lambda_step)  * PhiTPhi.mm(x) + self.Sp(lambda_step) * PhiTb
-        x = x - self.Sp(lambda_step) * torch.inverse(PhiTPhi + 0.001 * LTL).mm(PhiTPhi.mm(x) - PhiTb + 0.001 * LTL.mm(x))
+
+        # quadratic tv gradient descent from doi:  10.1109/TMI.2009.2022540 Eq. (10)
+        x = x - self.Sp(lambda_step) * torch.inverse(PhiTPhi + 0.001 * LTL).mm(PhiTPhi.mm(x) - PhiTb - 0.001 * LTL.mm(x))
 
         # convert (circle_num, batch_size) to (batch_size, channel, pnum, pnum)
         x = torch.mm(mask.t(), x)
